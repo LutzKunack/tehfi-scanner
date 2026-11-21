@@ -95,7 +95,7 @@
     <div class="row" style="margin-top:8px"><button data-code="ACT:UNDO">Undo</button><button data-code="ACT:CLEAR">Clear</button><button id="secBtn">Change section</button></div>
   </div>
   <div class="card"><label>Scans on this phone</label><ol class="log" id="log"></ol></div>
-  <p class="hint" style="text-align:center"><button id="outBtn" style="min-height:36px;font-size:13px">Sign out</button></p>
+  <p class="hint" style="text-align:center"><button id="reloadBtn" style="min-height:36px;font-size:13px">↻ Reload</button> <button id="outBtn" style="min-height:36px;font-size:13px">Sign out</button><br><span id="ver"></span></p>
 </section>
 
 <script src="html5-qrcode.min.js"></script>
@@ -161,6 +161,7 @@
     if (b.dataset.code) { unlock(); enqueue(b.dataset.code); return; }
     if (b.id === 'secBtn' || b.id === 'secBtn2') { chooseSection(); return; }
     if (b.id === 'secBack') { show('sScan'); return; }
+    if (b.id === 'reloadBtn') { stopCam(); location.reload(); return; }
     if (b.id === 'outBtn') { stopCam(); PIN = null; set('pin', null); set('user', null); USER = ''; who(); show('sSign'); return; }
     if (b.id === 'camBtn') { unlock(); startCam(); return; }
     if (b.id === 'camStop') { stopCam(); return; }
@@ -239,7 +240,17 @@
     try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
   }
   // ---- as an app on the phone: icon on the home screen, opens full screen, the page kept for weak signal ----
-  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(function () { });
+  var VERSION = '0.7.4';
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      // look for a new version whenever the app comes back to the front
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') reg.update().catch(function () { }); });
+    }).catch(function () { });
+    // a new version took over: reload once, by itself (not in the middle of sending scans)
+    navigator.serviceWorker.addEventListener('controllerchange', function () { if (!hadController) { hadController = true; return; } if (!queue.length) location.reload(); });
+  }
+  $('#ver').textContent = 'Version ' + VERSION;
   var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true, deferred = null;
   function installCard(how, btn) { if (standalone || get('installNo')) return; $('#installHow').textContent = how; $('#installBtn').hidden = !btn; $('#install').hidden = false; }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; installCard('Puts the TEHFI Scanner on the home screen as an app: one tap opens it full screen.', true); });
