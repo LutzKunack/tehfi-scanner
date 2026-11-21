@@ -6,3 +6,4 @@ Open https://lutzkunack.github.io/tehfi-scanner/ on any phone, sign in once with
 
 - `index.html` — the scanner page
 - `html5-qrcode.min.js` — QR / barcode reader (html5-qrcode 2.3.8, Apache-2.0)
+- `manifest.webmanifest`, `sw.js`, icons — so the scanner installs as an app on the phone's home screen

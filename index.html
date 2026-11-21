@@ -7,6 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-title" content="TEHFI Scan">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>TEHFI Scanner</title>
 <style>
   :root { --bg: #f2f0eb; --surface: #fff; --ink: #1d1f22; --muted: #62645f; --line: #dcd8cf; --ok: #2e7148; --bad: #b42318; --warn: #b9530b; --accent: #8a6a2c; color-scheme: light; }
@@ -41,12 +46,18 @@
   ol.log { list-style: none; padding: 0; margin: 0; font-size: 13px; }
   ol.log li { padding: 6px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 58px 1fr; gap: 6px; }
   ol.log li.bad span { color: var(--bad); } ol.log code { font-size: 12px; word-break: break-all; }
+  .install b { display: block; margin-bottom: 4px; }
   .queue { color: var(--warn); font-weight: 600; font-size: 14px; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <header><h1>TEHFI Scanner</h1><div class="who" id="who"></div></header>
+<div class="card install" id="install" hidden>
+  <b>Install as an app</b>
+  <p class="hint" id="installHow"></p>
+  <div class="row"><button class="primary" id="installBtn" hidden>Install</button><button id="installNo">Not now</button></div>
+</div>
 
 <!-- sign in -->
 <section id="sSign" class="card" hidden>
@@ -215,6 +226,16 @@
     if (!audio) return;
     try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
   }
+  // ---- as an app on the phone: icon on the home screen, opens full screen, the page kept for weak signal ----
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(function () { });
+  var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true, deferred = null;
+  function installCard(how, btn) { if (standalone || get('installNo')) return; $('#installHow').textContent = how; $('#installBtn').hidden = !btn; $('#install').hidden = false; }
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; installCard('Puts the TEHFI Scanner on the home screen as an app: one tap opens it full screen.', true); });
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) installCard('In Safari: tap the Share button, then "Add to Home Screen". The TEHFI Scan icon opens the scanner full screen.', false);
+  $('#installBtn').addEventListener('click', function () { if (!deferred) return; deferred.prompt(); deferred.userChoice.then(function () { deferred = null; $('#install').hidden = true; }); });
+  $('#installNo').addEventListener('click', function () { set('installNo', '1'); $('#install').hidden = true; });
+  window.addEventListener('appinstalled', function () { $('#install').hidden = true; });
+
   window.TEHFI_SCANNER = { enqueue: enqueue, state: function () { return { queue: queue.length, stage: STAGE, user: USER, device: DEVICE }; } }; // tests
   start();
 })();

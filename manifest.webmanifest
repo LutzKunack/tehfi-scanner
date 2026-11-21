@@ -1,0 +1,17 @@
+{
+  "name": "TEHFI Scanner",
+  "short_name": "TEHFI Scan",
+  "description": "Phone camera as the barcode / QR scanner for the TEHFI Production Monitor",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1d1f22",
+  "theme_color": "#1d1f22",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
