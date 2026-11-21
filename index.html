@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d1f22">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="robots" content="noindex, nofollow">
+<title>TEHFI Scanner</title>
+<style>
+  :root { --bg: #f2f0eb; --surface: #fff; --ink: #1d1f22; --muted: #62645f; --line: #dcd8cf; --ok: #2e7148; --bad: #b42318; --warn: #b9530b; --accent: #8a6a2c; color-scheme: light; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17181b; --surface: #202226; --ink: #ecebe6; --muted: #a4a39d; --line: #34363b; --ok: #4fae74; --bad: #f0645a; --warn: #e88a3c; --accent: #c9a25a; color-scheme: dark; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-text-size-adjust: 100%; }
+  body { padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 2px 8px; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+  header .who { font-size: 13px; color: var(--muted); text-align: right; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 10px 0; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input { width: 100%; font: 18px/1.2 ui-monospace, Menlo, Consolas, monospace; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+  button { font: 600 16px/1.2 inherit; font-family: inherit; min-height: 48px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  button.big { width: 100%; min-height: 56px; font-size: 18px; }
+  button:disabled { opacity: .5; }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .grid button { min-height: 60px; text-align: left; }
+  .msg { font-size: 18px; font-weight: 700; padding: 14px; border-radius: 12px; margin: 10px 0 6px; background: var(--surface); border: 2px solid var(--line); }
+  .msg.ok { border-color: var(--ok); } .msg.bad { border-color: var(--bad); }
+  .msg small { display: block; font-weight: 500; font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .next { font-size: 15px; margin: 4px 2px 10px; } .next b { color: var(--accent); }
+  #view { position: relative; width: 100%; max-width: 520px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; }
+  #view:empty, #view.off { display: none; }
+  #reader video { width: 100% !important; display: block; }
+  .unit b.id { font: 700 20px/1.2 ui-monospace, Menlo, Consolas, monospace; display: block; }
+  .unit p { margin: 4px 0; }
+  .late { color: var(--bad); font-weight: 700; } .due { color: var(--warn); font-weight: 700; }
+  .hint { color: var(--muted); font-size: 13px; }
+  ol.log { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  ol.log li { padding: 6px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 58px 1fr; gap: 6px; }
+  ol.log li.bad span { color: var(--bad); } ol.log code { font-size: 12px; word-break: break-all; }
+  .queue { color: var(--warn); font-weight: 600; font-size: 14px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header><h1>TEHFI Scanner</h1><div class="who" id="who"></div></header>
+
+<!-- sign in -->
+<section id="sSign" class="card" hidden>
+  <form id="pinForm">
+    <label for="pin">PIN (the same PIN as in the Production Monitor)</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required>
+    <p class="hint">Sign in once on this phone. The phone stays signed in.</p>
+    <button class="primary big" type="submit">Sign in</button>
+  </form>
+  <p id="signMsg" class="late"></p>
+</section>
+
+<!-- section -->
+<section id="sSec" class="card" hidden>
+  <label>Which section is this phone at?</label>
+  <div class="grid" id="secs"></div>
+</section>
+
+<!-- scanning -->
+<section id="sScan" hidden>
+  <div class="msg" id="msg">Ready.<small id="msgSub"></small></div>
+  <p class="next" id="next">Next: <b>Scan a unit label</b></p>
+  <div id="view" class="off"><div id="reader"></div></div>
+  <div class="row" style="margin-top:8px"><button class="primary" id="camBtn">Start camera</button><button id="camStop" hidden>Stop camera</button></div>
+  <div class="card unit" id="unit" hidden></div>
+  <div class="card">
+    <form id="typeForm" class="row"><input id="typeIn" autocomplete="off" autocapitalize="characters" placeholder="Type a code (order no., OP:…)"><button type="submit" style="flex:0 0 auto">Send</button></form>
+    <p class="queue" id="queue" hidden></p>
+    <div class="row" style="margin-top:8px"><button data-code="ACT:UNDO">Undo</button><button data-code="ACT:CLEAR">Clear</button><button id="secBtn">Section</button></div>
+  </div>
+  <div class="card"><label>Scans on this phone</label><ol class="log" id="log"></ol></div>
+  <p class="hint" style="text-align:center"><button id="outBtn" style="min-height:36px;font-size:13px">Sign out</button></p>
+</section>
+
+<script src="html5-qrcode.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  // The Production Monitor (Google Apps Script web app). Scans go here; the PMP checks the PIN and the rules.
+  var API = 'https://script.google.com/macros/s/AKfycbwns93kZOOOohmJAmOIhBgb1tEjeOXyXCEYJ1njVo-xKREuI2REBgh9fImzjVAT49T0tQ/exec';
+  if (window.TEHFI_SCANNER_API) API = window.TEHFI_SCANNER_API; // tests
+  var $ = function (s) { return document.querySelector(s); };
+  var get = function (k) { try { return localStorage.getItem('tehfi-scan-' + k); } catch (e) { return null; } };
+  var set = function (k, v) { try { if (v === null) localStorage.removeItem('tehfi-scan-' + k); else localStorage.setItem('tehfi-scan-' + k, v); } catch (e) { /* private mode: keeps working for this session */ } };
+  var PIN = get('pin'), STAGE = get('stage'), STAGE_NAME = get('stageName') || '', USER = get('user') || '';
+  var DEVICE = get('device') || (function () { var d = Math.random().toString(36).slice(2, 8).toUpperCase(); set('device', d); return d; })();
+  var queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null, log = [];
+
+  function show(id) { ['sSign', 'sSec', 'sScan'].forEach(function (s) { $('#' + s).hidden = s !== id; }); }
+  function who() { $('#who').textContent = (USER ? USER : '') + (STAGE_NAME ? ' · ' + STAGE_NAME : ''); }
+  function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+
+  function post(action, args) {
+    return fetch(API, { method: 'POST', redirect: 'follow', credentials: 'omit', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ pin: PIN, action: action, args: args || {} }) })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+
+  // ---- sign in and section ----
+  function signedIn(o) {
+    USER = (o.user && o.user.name) || ''; set('user', USER); set('pin', PIN); who();
+    return post('scanSetup').then(function (s) {
+      var list = (s.res && s.res.sections) || [];
+      $('#secs').innerHTML = list.map(function (x) { return '<button data-sec="' + esc(x.id) + '" data-name="' + esc(x.name) + '">' + esc(x.name) + '</button>'; }).join('');
+      if (STAGE && list.some(function (x) { return x.id === STAGE; })) { show('sScan'); } else show('sSec');
+    });
+  }
+  function start() {
+    who();
+    if (!PIN) return show('sSign');
+    post('signin').then(function (o) {
+      if (!o.ok) { PIN = null; set('pin', null); show('sSign'); $('#signMsg').textContent = o.msg || 'Sign in again.'; return; }
+      return signedIn(o);
+    }).catch(function (e) { show('sScan'); say(false, 'No connection to the Production Monitor.', 'Scans are kept on this phone and sent when the connection is back.'); });
+  }
+  $('#pinForm').addEventListener('submit', function (e) {
+    e.preventDefault(); PIN = $('#pin').value.trim(); if (!PIN) return;
+    $('#signMsg').textContent = 'Signing in …';
+    post('signin').then(function (o) {
+      if (!o.ok) { $('#signMsg').textContent = o.msg || 'Wrong PIN.'; PIN = null; return; }
+      $('#signMsg').textContent = ''; $('#pin').value = ''; return signedIn(o);
+    }).catch(function () { $('#signMsg').textContent = 'No connection. Check the internet and try again.'; PIN = null; });
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.sec) {
+      STAGE = b.dataset.sec; STAGE_NAME = b.dataset.name; set('stage', STAGE); set('stageName', STAGE_NAME); who();
+      show('sScan'); say(true, 'Section: ' + STAGE_NAME + '.', 'Scan a unit label.'); $('#next').innerHTML = 'Next: <b>Scan a unit label</b>'; $('#unit').hidden = true;
+      return;
+    }
+    if (b.dataset.code) { unlock(); enqueue(b.dataset.code); return; }
+    if (b.id === 'secBtn') { show('sSec'); return; }
+    if (b.id === 'outBtn') { stopCam(); PIN = null; set('pin', null); set('user', null); USER = ''; who(); show('sSign'); return; }
+    if (b.id === 'camBtn') { unlock(); startCam(); return; }
+    if (b.id === 'camStop') { stopCam(); return; }
+  });
+  $('#typeForm').addEventListener('submit', function (e) { e.preventDefault(); var v = $('#typeIn').value.trim(); if (v) { unlock(); enqueue(v); $('#typeIn').value = ''; } });
+
+  // ---- camera ----
+  function startCam() {
+    if (!window.Html5Qrcode) return say(false, 'The scanner could not load.', 'Reload the page.');
+    if (!scanner) scanner = new Html5Qrcode('reader', { verbose: false, formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.DATA_MATRIX], experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+    $('#view').classList.remove('off'); // visible before start: the library sizes the video from it
+    scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: function (w, h) { var m = Math.floor(Math.min(w, h) * 0.75); return { width: m, height: m }; } }, function (text) { onCode(text); }, function () { })
+      .then(function () { $('#camBtn').hidden = true; $('#camStop').hidden = false; $('#view').classList.remove('off'); })
+      .catch(function (err) { $('#view').classList.add('off'); say(false, 'The camera did not start.', 'Allow the camera for this page in the browser settings, then tap Start camera again. (' + (err && err.message || err) + ')'); });
+  }
+  function stopCam() { if (scanner && scanner.isScanning) scanner.stop().catch(function () { }); $('#camBtn').hidden = false; $('#camStop').hidden = true; $('#view').classList.add('off'); }
+  // what a scanned code is, in words, for the log
+  function label(code) {
+    var m = String(code).match(/[?&]u=([^&#\s]+)/i); if (m) { try { return 'Unit ' + decodeURIComponent(m[1]); } catch (e) { return 'Unit ' + m[1]; } }
+    m = String(code).match(/[?&]code=([^&#\s]+)/i); if (m) return 'Bot job ' + m[1];
+    return code.length > 60 ? code.slice(0, 60) + '…' : code;
+  }
+  function onCode(text) {
+    var now = Date.now();
+    // the same label still in front of the camera is sent once; it counts again after 4 s out of view
+    if (text === lastCode && now - lastAt < 4000) { lastAt = now; return; }
+    lastCode = text; lastAt = now; enqueue(text);
+  }
+
+  // ---- sending, in order; kept on the phone while offline ----
+  function enqueue(code) {
+    if (!STAGE) { show('sSec'); return; }
+    queue.push({ code: code, stage: STAGE, t: new Date() }); pump();
+  }
+  function pump() {
+    showQueue();
+    if (sending || !queue.length) return;
+    sending = true; var q = queue[0];
+    post('mscan', { device: DEVICE, stage: q.stage, code: q.code }).then(function (o) {
+      sending = false;
+      if (!o.ok) { if (o.auth) { queue = []; PIN = null; set('pin', null); show('sSign'); $('#signMsg').textContent = o.msg; return; } queue.shift(); result(q, false, o.msg || 'Not saved.'); return pump(); }
+      queue.shift(); var r = o.res || {};
+      result(q, !!r.ok, r.msg || '', r); pump();
+    }).catch(function () {
+      sending = false; showQueue(true);
+      setTimeout(pump, 5000); // retry: the order of the scans is kept
+    });
+  }
+  function showQueue(offline) {
+    var n = queue.length, el = $('#queue');
+    el.hidden = !(n > 1 || (offline && n));
+    el.textContent = offline ? 'No connection: ' + n + ' scan' + (n === 1 ? '' : 's') + ' waiting, sent automatically when the connection is back.' : n + ' scans being sent …';
+  }
+  function result(q, ok, msg, r) {
+    say(ok, msg); beep(ok);
+    if (r && r.next) $('#next').innerHTML = 'Next: <b>' + esc(r.next) + '</b>';
+    if (r) unit(r.now);
+    var t = q.t; log.unshift({ t: ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2), code: q.code, msg: msg, ok: ok });
+    log = log.slice(0, 12);
+    $('#log').innerHTML = log.map(function (l) { return '<li class="' + (l.ok ? '' : 'bad') + '"><time>' + l.t + '</time><div><code>' + esc(label(l.code)) + '</code><br><span>' + esc(l.msg) + '</span></div></li>'; }).join('');
+  }
+  function say(ok, msg, sub) { var m = $('#msg'); m.className = 'msg ' + (ok ? 'ok' : 'bad'); m.innerHTML = esc(msg) + '<small>' + esc(sub || '') + '</small>'; }
+  function fd(iso) { if (!iso) return ''; var p = iso.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; }
+  function unit(u) {
+    var el = $('#unit'); if (!u) { el.hidden = true; return; }
+    var mv = u.moveBy ? (u.left < 0 ? '<span class="late">Move by ' + fd(u.moveBy) + ': delayed ' + (-u.left) + ' day' + (u.left === -1 ? '' : 's') + '</span>' : u.left === 0 ? '<span class="due">Must move today</span>' : 'Move by <b>' + fd(u.moveBy) + '</b> · ' + u.left + ' day' + (u.left === 1 ? '' : 's') + ' left') : '';
+    el.innerHTML = '<b class="id">' + esc(u.id) + (u.part ? ' (' + (u.part === 'cap' ? 'cap' : 'hair') + ')' : '') + '</b><p>' + esc(u.client) + ' · ' + esc(u.model) + ' · ' + esc(String(u.itemType || '').toLowerCase()) + '</p>' +
+      '<p>' + esc(u.stage) + (mv ? ' · ' + mv : '') + '</p><p>' + (u.operator ? 'Worker: <b>' + esc(u.operator) + '</b>' : 'No worker yet') + (u.inspector ? ' · checked by <b>' + esc(u.inspector) + '</b>' : '') + '</p>' + (u.hold ? '<p class="late">On hold: ' + esc(u.hold) + '</p>' : '');
+    el.hidden = false;
+  }
+  // a short beep (high = saved, low = refused) and a buzz; sound needs one tap first (Start camera)
+  function unlock() { try { if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) { audio = null; } }
+  function beep(ok) {
+    try { if (navigator.vibrate) navigator.vibrate(ok ? 60 : [80, 60, 80]); } catch (e) { }
+    if (!audio) return;
+    try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
+  }
+  window.TEHFI_SCANNER = { enqueue: enqueue, state: function () { return { queue: queue.length, stage: STAGE, user: USER, device: DEVICE }; } }; // tests
+  start();
+})();
+</script>
+</body>
+</html>
