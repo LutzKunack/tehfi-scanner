@@ -43,9 +43,6 @@
   .unit p { margin: 4px 0; }
   .late { color: var(--bad); font-weight: 700; } .due { color: var(--warn); font-weight: 700; }
   .hint { color: var(--muted); font-size: 13px; }
-  ol.log { list-style: none; padding: 0; margin: 0; font-size: 13px; }
-  ol.log li { padding: 6px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 58px 1fr; gap: 6px; }
-  ol.log li.bad span { color: var(--bad); } ol.log code { font-size: 12px; word-break: break-all; }
   .install b { display: block; margin-bottom: 4px; }
   .secbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 8px 8px 14px; }
   .secbar b { font-size: 17px; } .secbar button { min-height: 44px; }
@@ -94,7 +91,6 @@
     <p class="queue" id="queue" hidden></p>
     <div class="row" style="margin-top:8px"><button data-code="ACT:UNDO">Undo</button><button data-code="ACT:CLEAR">Clear</button><button id="secBtn">Change section</button></div>
   </div>
-  <div class="card"><label>Scans on this phone</label><ol class="log" id="log"></ol></div>
   <p class="hint" style="text-align:center"><button id="reloadBtn" style="min-height:36px;font-size:13px">↻ Reload</button> <button id="outBtn" style="min-height:36px;font-size:13px">Sign out</button><br><span id="ver"></span></p>
 </section>
 
@@ -110,7 +106,7 @@
   var set = function (k, v) { try { if (v === null) localStorage.removeItem('tehfi-scan-' + k); else localStorage.setItem('tehfi-scan-' + k, v); } catch (e) { /* private mode: keeps working for this session */ } };
   var PIN = get('pin'), STAGE = get('stage'), STAGE_NAME = get('stageName') || '', USER = get('user') || '';
   var DEVICE = get('device') || (function () { var d = Math.random().toString(36).slice(2, 8).toUpperCase(); set('device', d); return d; })();
-  var queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null, log = [];
+  var queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null;
 
   function show(id) { ['sSign', 'sSec', 'sScan'].forEach(function (s) { $('#' + s).hidden = s !== id; }); }
   function who() { $('#who').textContent = USER || ''; var sn = $('#secName'); if (sn) sn.textContent = STAGE_NAME || '—'; }
@@ -178,7 +174,7 @@
       .catch(function (err) { $('#view').classList.add('off'); say(false, 'The camera did not start.', 'Allow the camera for this page in the browser settings, then tap Start camera again. (' + (err && err.message || err) + ')'); });
   }
   function stopCam() { if (scanner && scanner.isScanning) scanner.stop().catch(function () { }); $('#camBtn').hidden = false; $('#camStop').hidden = true; $('#view').classList.add('off'); }
-  // what a scanned code is, in words, for the log
+  // what a scanned code is, in words, under the message
   function label(code) {
     var m = String(code).match(/[?&]u=([^&#\s]+)/i); if (m) { try { return 'Unit ' + decodeURIComponent(m[1]); } catch (e) { return 'Unit ' + m[1]; } }
     m = String(code).match(/[?&]code=([^&#\s]+)/i); if (m) return 'Bot job ' + m[1];
@@ -219,11 +215,10 @@
     say(ok, msg); beep(ok);
     if (r && r.next) $('#next').innerHTML = 'Next: <b>' + esc(r.next) + '</b>';
     if (r) unit(r.now);
-    var t = q.t; log.unshift({ t: ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2), code: q.code, msg: msg, ok: ok });
-    log = log.slice(0, 12);
-    $('#log').innerHTML = log.map(function (l) { return '<li class="' + (l.ok ? '' : 'bad') + '"><time>' + l.t + '</time><div><code>' + esc(label(l.code)) + '</code><br><span>' + esc(l.msg) + '</span></div></li>'; }).join('');
+    // only the last scan is shown; the record of every scan is kept in the Production Monitor, not on the phone
+    var t = q.t; $('#msgSub').textContent = label(q.code) + ' · ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
   }
-  function say(ok, msg, sub) { var m = $('#msg'); m.className = 'msg ' + (ok ? 'ok' : 'bad'); m.innerHTML = esc(msg) + '<small>' + esc(sub || '') + '</small>'; }
+  function say(ok, msg, sub) { var m = $('#msg'); m.className = 'msg ' + (ok ? 'ok' : 'bad'); m.innerHTML = esc(msg) + '<small id="msgSub">' + esc(sub || '') + '</small>'; }
   function fd(iso) { if (!iso) return ''; var p = iso.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; }
   function unit(u) {
     var el = $('#unit'); if (!u) { el.hidden = true; return; }
@@ -240,7 +235,7 @@
     try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
   }
   // ---- as an app on the phone: icon on the home screen, opens full screen, the page kept for weak signal ----
-  var VERSION = '0.7.4';
+  var VERSION = '0.7.5';
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     var hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
