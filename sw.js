@@ -1,6 +1,6 @@
 // TEHFI Scanner: keeps the page itself on the phone so the app opens even with a weak signal.
 // Scans are never cached: they go straight to the Production Monitor (a different site, not touched here).
-var CACHE = 'tehfi-scanner-v0.7.5';
+var CACHE = 'tehfi-scanner-v0.7.6';
 var SHELL = ['./', './index.html', './html5-qrcode.min.js', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', function (e) { e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); })); });
 self.addEventListener('activate', function (e) {

@@ -34,6 +34,7 @@
   .grid button { min-height: 60px; text-align: left; }
   .msg { font-size: 18px; font-weight: 700; padding: 14px; border-radius: 12px; margin: 10px 0 6px; background: var(--surface); border: 2px solid var(--line); }
   .msg.ok { border-color: var(--ok); } .msg.bad { border-color: var(--bad); }
+  .acts { flex-wrap: wrap; margin: 0 0 8px; } .acts button { flex: 1 1 140px; } .acts button.go { border: 2px solid var(--accent); }
   .msg small { display: block; font-weight: 500; font-size: 14px; color: var(--muted); margin-top: 6px; }
   .next { font-size: 15px; margin: 4px 2px 10px; } .next b { color: var(--accent); }
   #view { position: relative; width: 100%; max-width: 520px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; }
@@ -82,6 +83,7 @@
 <section id="sScan" hidden>
   <div class="secbar"><span>Section: <b id="secName">—</b></span><button id="secBtn2">Change section</button></div>
   <div class="msg" id="msg">Ready.<small id="msgSub"></small></div>
+  <div class="row acts" id="msgAct" hidden></div>
   <p class="next" id="next">Next: <b>Scan a unit label</b></p>
   <div id="view" class="off"><div id="reader"></div></div>
   <div class="row" style="margin-top:8px"><button class="primary" id="camBtn">Start camera</button><button id="camStop" class="stop" hidden>■ Stop camera</button></div>
@@ -89,7 +91,7 @@
   <div class="card">
     <form id="typeForm" class="row"><input id="typeIn" autocomplete="off" autocapitalize="characters" placeholder="Type a code (order no., OP:…)"><button type="submit" style="flex:0 0 auto">Send</button></form>
     <p class="queue" id="queue" hidden></p>
-    <div class="row" style="margin-top:8px"><button data-code="ACT:UNDO">Undo</button><button data-code="ACT:CLEAR">Clear</button><button id="secBtn">Change section</button></div>
+    <div class="row" style="margin-top:8px"><button data-code="ACT:UNDO">Undo last step</button><button data-code="ACT:CLEAR">Start over</button><button id="secBtn">Change section</button></div>
   </div>
   <p class="hint" style="text-align:center"><button id="reloadBtn" style="min-height:36px;font-size:13px">↻ Reload</button> <button id="outBtn" style="min-height:36px;font-size:13px">Sign out</button><br><span id="ver"></span></p>
 </section>
@@ -106,7 +108,7 @@
   var set = function (k, v) { try { if (v === null) localStorage.removeItem('tehfi-scan-' + k); else localStorage.setItem('tehfi-scan-' + k, v); } catch (e) { /* private mode: keeps working for this session */ } };
   var PIN = get('pin'), STAGE = get('stage'), STAGE_NAME = get('stageName') || '', USER = get('user') || '';
   var DEVICE = get('device') || (function () { var d = Math.random().toString(36).slice(2, 8).toUpperCase(); set('device', d); return d; })();
-  var queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null;
+  var SECTIONS = {}, queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null;
 
   function show(id) { ['sSign', 'sSec', 'sScan'].forEach(function (s) { $('#' + s).hidden = s !== id; }); }
   function who() { $('#who').textContent = USER || ''; var sn = $('#secName'); if (sn) sn.textContent = STAGE_NAME || '—'; }
@@ -114,6 +116,10 @@
   function chooseSection() {
     [].forEach.call(document.querySelectorAll('#secs button'), function (b) { b.classList.toggle('on', b.dataset.sec === STAGE); });
     $('#secBack').hidden = !STAGE; show('sSec');
+  }
+  function setStage(id, name) {
+    STAGE = id; STAGE_NAME = name; set('stage', STAGE); set('stageName', STAGE_NAME); who();
+    show('sScan'); $('#next').innerHTML = 'Next: <b>Scan a unit label</b>'; $('#unit').hidden = true;
   }
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
@@ -127,6 +133,7 @@
     USER = (o.user && o.user.name) || ''; set('user', USER); set('pin', PIN); who();
     return post('scanSetup').then(function (s) {
       var list = (s.res && s.res.sections) || [];
+      list.forEach(function (x) { SECTIONS[x.id] = x.name; });
       $('#secs').innerHTML = list.map(function (x) { return '<button data-sec="' + esc(x.id) + '" data-name="' + esc(x.name) + '">' + esc(x.name) + '</button>'; }).join('');
       if (STAGE && list.some(function (x) { return x.id === STAGE; })) { show('sScan'); } else show('sSec');
     });
@@ -149,13 +156,12 @@
   });
   document.addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.sec) {
-      STAGE = b.dataset.sec; STAGE_NAME = b.dataset.name; set('stage', STAGE); set('stageName', STAGE_NAME); who();
-      show('sScan'); say(true, 'Section changed to ' + STAGE_NAME + '.', 'Scan a unit label.'); $('#next').innerHTML = 'Next: <b>Scan a unit label</b>'; $('#unit').hidden = true;
-      return;
-    }
+    if (b.dataset.sec) { setStage(b.dataset.sec, b.dataset.name); say(true, 'Section changed to ' + STAGE_NAME + '.', 'Scan a unit label.'); return; }
+    // after a refused scan: switch to the section where the unit is and send the same scan again, or just dismiss
+    if (b.dataset.switch) { var again = b.dataset.again; setStage(b.dataset.switch, SECTIONS[b.dataset.switch] || b.dataset.switch); say(true, 'Section changed to ' + STAGE_NAME + '.', 'Sending the scan again …'); unlock(); if (again) enqueue(again); return; }
+    if (b.id === 'dismiss') { say(null, 'Ready. Scan a unit label.', 'Nothing was saved for the refused scan.'); return; }
     if (b.dataset.code) { unlock(); enqueue(b.dataset.code); return; }
-    if (b.id === 'secBtn' || b.id === 'secBtn2') { chooseSection(); return; }
+    if (b.id === 'secBtn' || b.id === 'secBtn2' || b.id === 'secBtn3') { chooseSection(); return; }
     if (b.id === 'secBack') { show('sScan'); return; }
     if (b.id === 'reloadBtn') { stopCam(); location.reload(); return; }
     if (b.id === 'outBtn') { stopCam(); PIN = null; set('pin', null); set('user', null); USER = ''; who(); show('sSign'); return; }
@@ -213,12 +219,21 @@
   }
   function result(q, ok, msg, r) {
     say(ok, msg); beep(ok);
+    if (!ok) acts(q, r || {});
     if (r && r.next) $('#next').innerHTML = 'Next: <b>' + esc(r.next) + '</b>';
     if (r) unit(r.now);
     // only the last scan is shown; the record of every scan is kept in the Production Monitor, not on the phone
-    var t = q.t; $('#msgSub').textContent = label(q.code) + ' · ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+    var t = q.t; $('#msgSub').textContent = (ok ? '' : 'Nothing was saved. ') + label(q.code) + ' · ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
   }
-  function say(ok, msg, sub) { var m = $('#msg'); m.className = 'msg ' + (ok ? 'ok' : 'bad'); m.innerHTML = esc(msg) + '<small id="msgSub">' + esc(sub || '') + '</small>'; }
+  // the way out of a refused scan: the section where the unit really is (sends the scan again there), another section, or OK
+  function acts(q, r) {
+    var at = (r.at || []).filter(function (x) { return SECTIONS[x.id] && x.id !== STAGE; }), h = '';
+    at.forEach(function (x) { h += '<button class="go" data-switch="' + esc(x.id) + '" data-again="' + esc(q.code) + '">Switch to ' + esc(x.name) + '</button>'; });
+    if (r.wrongStage && !at.length) h += '<button id="secBtn3">Change section</button>';
+    h += '<button id="dismiss">OK</button>';
+    var el = $('#msgAct'); el.innerHTML = h; el.hidden = false;
+  }
+  function say(ok, msg, sub) { var m = $('#msg'); m.className = 'msg' + (ok === null ? '' : ok ? ' ok' : ' bad'); $('#msgAct').hidden = true; m.innerHTML = esc(msg) + '<small id="msgSub">' + esc(sub || '') + '</small>'; }
   function fd(iso) { if (!iso) return ''; var p = iso.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' + d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]; }
   function unit(u) {
     var el = $('#unit'); if (!u) { el.hidden = true; return; }
@@ -235,7 +250,7 @@
     try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
   }
   // ---- as an app on the phone: icon on the home screen, opens full screen, the page kept for weak signal ----
-  var VERSION = '0.7.5';
+  var VERSION = '0.7.6';
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     var hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
@@ -245,7 +260,7 @@
     // a new version took over: reload once, by itself (not in the middle of sending scans)
     navigator.serviceWorker.addEventListener('controllerchange', function () { if (!hadController) { hadController = true; return; } if (!queue.length) location.reload(); });
   }
-  $('#ver').textContent = 'Version ' + VERSION;
+  $('#ver').textContent = 'Version ' + VERSION + ' · Phone ' + DEVICE; // the phone no. in the daily report
   var standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true, deferred = null;
   function installCard(how, btn) { if (standalone || get('installNo')) return; $('#installHow').textContent = how; $('#installBtn').hidden = !btn; $('#install').hidden = false; }
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferred = e; installCard('Puts the TEHFI Scanner on the home screen as an app: one tap opens it full screen.', true); });
