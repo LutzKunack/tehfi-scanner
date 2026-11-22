@@ -37,6 +37,19 @@
   .acts { flex-wrap: wrap; margin: 0 0 8px; } .acts button { flex: 1 1 140px; } .acts button.go { border: 2px solid var(--accent); }
   .msg small { display: block; font-weight: 500; font-size: 14px; color: var(--muted); margin-top: 6px; }
   .next { font-size: 15px; margin: 4px 2px 10px; } .next b { color: var(--accent); }
+  .steps h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .steps ol { list-style: none; margin: 0; padding: 0; counter-reset: st; }
+  .steps li { counter-increment: st; display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); color: var(--muted); }
+  .steps li:first-child { border-top: 0; }
+  .steps li::before { content: counter(st); flex: 0 0 26px; height: 26px; line-height: 26px; border-radius: 50%; text-align: center; font-weight: 700; font-size: 14px; border: 1px solid var(--line); }
+  .steps li.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: var(--surface); }
+  .steps li.now { color: var(--ink); font-weight: 700; font-size: 17px; }
+  .steps li.now::before { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+  .steps li b { font-weight: 700; color: var(--ink); }
+  .decide { flex-wrap: wrap; margin-top: 10px; } .decide button { flex: 1 1 120px; min-height: 56px; font-size: 17px; }
+  button.pass { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+  button.rej { border: 2px solid var(--bad); color: var(--bad); }
+  #defects .grid button { min-height: 52px; font-size: 15px; }
   #view { position: relative; width: 100%; max-width: 520px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; }
   #view:empty, #view.off { display: none; }
   #reader video { width: 100% !important; display: block; }
@@ -84,7 +97,13 @@
   <div class="secbar"><span>Section: <b id="secName">—</b></span><button id="secBtn2">Change section</button></div>
   <div class="msg" id="msg">Ready.<small id="msgSub"></small></div>
   <div class="row acts" id="msgAct" hidden></div>
-  <p class="next" id="next">Next: <b>Scan a unit label</b></p>
+  <div class="card steps" id="steps">
+    <h2>What to do now</h2>
+    <ol id="stepList"></ol>
+    <p class="next" id="next" hidden></p>
+    <div class="row decide" id="decide" hidden><button class="pass" data-code="QC:PASS">✓ PASS</button><button class="rej" id="rejBtn">✗ REJECT …</button><button id="qaBtn" data-code="QC:OK" hidden>QA check OK</button></div>
+    <div id="defects" hidden><p class="hint" style="margin:10px 0 6px">What is wrong? Tap the defect:</p><div class="grid" id="defList"></div><button class="big" id="rejCancel" style="margin-top:8px">Cancel, do not reject</button></div>
+  </div>
   <div id="view" class="off"><div id="reader"></div></div>
   <div class="row" style="margin-top:8px"><button class="primary" id="camBtn">Start camera</button><button id="camStop" class="stop" hidden>■ Stop camera</button></div>
   <div class="card unit" id="unit" hidden></div>
@@ -108,7 +127,7 @@
   var set = function (k, v) { try { if (v === null) localStorage.removeItem('tehfi-scan-' + k); else localStorage.setItem('tehfi-scan-' + k, v); } catch (e) { /* private mode: keeps working for this session */ } };
   var PIN = get('pin'), STAGE = get('stage'), STAGE_NAME = get('stageName') || '', USER = get('user') || '';
   var DEVICE = get('device') || (function () { var d = Math.random().toString(36).slice(2, 8).toUpperCase(); set('device', d); return d; })();
-  var SECTIONS = {}, queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null;
+  var SECTIONS = {}, WORKER = {}, DEFECTS = [], queue = [], sending = false, lastCode = '', lastAt = 0, scanner = null, audio = null;
 
   function show(id) { ['sSign', 'sSec', 'sScan'].forEach(function (s) { $('#' + s).hidden = s !== id; }); }
   function who() { $('#who').textContent = USER || ''; var sn = $('#secName'); if (sn) sn.textContent = STAGE_NAME || '—'; }
@@ -119,7 +138,7 @@
   }
   function setStage(id, name) {
     STAGE = id; STAGE_NAME = name; set('stage', STAGE); set('stageName', STAGE_NAME); who();
-    show('sScan'); $('#next').innerHTML = 'Next: <b>Scan a unit label</b>'; $('#unit').hidden = true;
+    show('sScan'); steps(null); $('#unit').hidden = true;
   }
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
@@ -133,7 +152,10 @@
     USER = (o.user && o.user.name) || ''; set('user', USER); set('pin', PIN); who();
     return post('scanSetup').then(function (s) {
       var list = (s.res && s.res.sections) || [];
-      list.forEach(function (x) { SECTIONS[x.id] = x.name; });
+      list.forEach(function (x) { SECTIONS[x.id] = x.name; WORKER[x.id] = !!x.worker; });
+      DEFECTS = (s.res && s.res.defects) || [];
+      $('#defList').innerHTML = DEFECTS.map(function (d) { return '<button data-code="QC:REJ:' + esc(d.id) + '">' + esc(d.name) + '</button>'; }).join('');
+      steps(null);
       $('#secs').innerHTML = list.map(function (x) { return '<button data-sec="' + esc(x.id) + '" data-name="' + esc(x.name) + '">' + esc(x.name) + '</button>'; }).join('');
       if (STAGE && list.some(function (x) { return x.id === STAGE; })) { show('sScan'); } else show('sSec');
     });
@@ -159,6 +181,8 @@
     if (b.dataset.sec) { setStage(b.dataset.sec, b.dataset.name); say(true, 'Section changed to ' + STAGE_NAME + '.', 'Scan a unit label.'); return; }
     // after a refused scan: switch to the section where the unit is and send the same scan again, or just dismiss
     if (b.dataset.switch) { var again = b.dataset.again; setStage(b.dataset.switch, SECTIONS[b.dataset.switch] || b.dataset.switch); say(true, 'Section changed to ' + STAGE_NAME + '.', 'Sending the scan again …'); unlock(); if (again) enqueue(again); return; }
+    if (b.id === 'rejBtn') { $('#decide').hidden = true; $('#defects').hidden = false; return; }
+    if (b.id === 'rejCancel') { $('#defects').hidden = true; $('#decide').hidden = false; return; }
     if (b.id === 'dismiss') { say(null, 'Ready. Scan a unit label.', 'Nothing was saved for the refused scan.'); return; }
     if (b.dataset.code) { unlock(); enqueue(b.dataset.code); return; }
     if (b.id === 'secBtn' || b.id === 'secBtn2' || b.id === 'secBtn3') { chooseSection(); return; }
@@ -220,10 +244,30 @@
   function result(q, ok, msg, r) {
     say(ok, msg); beep(ok);
     if (!ok) acts(q, r || {});
-    if (r && r.next) $('#next').innerHTML = 'Next: <b>' + esc(r.next) + '</b>';
+    if (r) steps(r);
     if (r) unit(r.now);
     // only the last scan is shown; the record of every scan is kept in the Production Monitor, not on the phone
     var t = q.t; $('#msgSub').textContent = (ok ? '' : 'Nothing was saved. ') + label(q.code) + ' · ' + ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2) + ':' + ('0' + t.getSeconds()).slice(-2);
+  }
+  // the checklist of the section: what is done (ticked), what to do now (highlighted), what comes after.
+  // r = the PMP's answer after a scan (steps from the engine); null = a fresh start at this section.
+  function steps(r) {
+    var list = r && r.steps;
+    if (!list && r && r.next && !r.steps) { $('#stepList').innerHTML = ''; $('#next').hidden = false; $('#next').innerHTML = 'Next: <b>' + esc(r.next) + '</b>'; $('#decide').hidden = $('#defects').hidden = true; return; } // an older PMP
+    if (!list && !DEFECTS.length) { $('#stepList').innerHTML = ''; $('#next').hidden = false; $('#next').innerHTML = 'Next: <b>Scan a unit label</b>'; $('#decide').hidden = $('#defects').hidden = true; return; } // an older PMP
+    if (!list) {
+      list = [{ key: 'unit', label: 'Scan the unit label' }];
+      if (WORKER[STAGE]) list.push({ key: 'worker', label: 'Scan the ID card of the worker who made it' });
+      list.push({ key: 'checker', label: 'Scan your own ID card (you check it)' }, { key: 'result', label: 'PASS, or REJECT with the defect' + (WORKER[STAGE] ? ' (or QA check OK: checked, stays here)' : '') });
+      r = { current: 'unit', decide: false, qaCheck: WORKER[STAGE] };
+    }
+    $('#next').hidden = true;
+    $('#stepList').innerHTML = list.map(function (x) {
+      var cls = x.done ? 'done' : x.key === r.current ? 'now' : '';
+      return '<li class="' + cls + '"><span>' + esc(x.label) + (x.done && x.value ? ': <b>' + esc(x.value) + '</b>' : '') + '</span></li>';
+    }).join('');
+    $('#decide').hidden = !r.decide; $('#defects').hidden = true;
+    $('#qaBtn').hidden = !r.qaCheck; $('#rejBtn').hidden = !DEFECTS.length;
   }
   // the way out of a refused scan: the section where the unit really is (sends the scan again there), another section, or OK
   function acts(q, r) {
@@ -250,7 +294,7 @@
     try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
   }
   // ---- as an app on the phone: icon on the home screen, opens full screen, the page kept for weak signal ----
-  var VERSION = '0.7.6';
+  var VERSION = '0.7.7';
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     var hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
