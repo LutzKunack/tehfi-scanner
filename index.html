@@ -208,6 +208,7 @@
   function label(code) {
     var m = String(code).match(/[?&]u=([^&#\s]+)/i); if (m) { try { return 'Unit ' + decodeURIComponent(m[1]); } catch (e) { return 'Unit ' + m[1]; } }
     m = String(code).match(/[?&]code=([^&#\s]+)/i); if (m) return 'Bot job ' + m[1];
+    m = String(code).match(/[?&]j=([^&#\s]+)/i); if (m) { var jc = m[1]; try { jc = decodeURIComponent(jc); } catch (e) { } return 'Bot job ' + jc.split('.')[0].toUpperCase(); } // TEHFI Control link …/control/?j=CODE.xxxx
     return code.length > 60 ? code.slice(0, 60) + '…' : code;
   }
   function onCode(text) {
@@ -294,7 +295,7 @@
     try { var o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.12 : 0.35)); } catch (e) { }
   }
   // ---- as an app on the phone: icon on the home screen, opens full screen, the page kept for weak signal ----
-  var VERSION = '0.7.7';
+  var VERSION = '0.7.8';
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     var hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
